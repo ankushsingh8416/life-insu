@@ -1,0 +1,14 @@
+# Railway deploy config for the API service (apps/api).
+# Build context stays at the repo root (required — the Dockerfile's `turbo prune`
+# step needs the whole monorepo visible, not just apps/api). Do NOT set a "Root
+# Directory" for this service in the Railway dashboard; this file already points
+# at the right Dockerfile from the root.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/api/Dockerfile"
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

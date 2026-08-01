@@ -1,0 +1,225 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Visitors & Sessions
+// ---------------------------------------------------------------------------
+
+model Visitor {
+  id          String   @id @default(uuid())
+  language    String?
+  country     String?
+  city        String?
+  device      String?
+  browser     String?
+  os          String?
+  trafficSrc  String?
+  ipHash      String?
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @updatedAt
+
+  sessions ChatSession[]
+
+  @@index([firstSeenAt])
+  @@map("visitors")
+}
+
+enum ChatSessionStatus {
+  active
+  closed
+  expired
+}
+
+model ChatSession {
+  id        String            @id @default(uuid())
+  visitorId String
+  visitor   Visitor           @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  title     String?
+  language  String            @default("en")
+  status    ChatSessionStatus @default(active)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  messages Message[]
+
+  @@index([visitorId])
+  @@index([createdAt])
+  @@map("chat_sessions")
+}
+
+// ---------------------------------------------------------------------------
+// Messages & Feedback
+// ---------------------------------------------------------------------------
+
+enum ChatRole {
+  user
+  assistant
+  system
+}
+
+enum MessageStatus {
+  pending
+  streaming
+  complete
+  error
+  rejected_out_of_domain
+}
+
+model Message {
+  id              String        @id @default(uuid())
+  sessionId       String
+  session         ChatSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role            ChatRole
+  content         String        @db.Text
+  citations       Json          @default("[]")
+  status          MessageStatus @default(complete)
+  confidenceScore Float?
+  provider        String?
+  model           String?
+  language        String?
+  tokensInput     Int?
+  tokensOutput    Int?
+  latencyMs       Int?
+  costUsd         Decimal?      @db.Decimal(10, 6)
+  createdAt       DateTime      @default(now())
+
+  feedback Feedback?
+
+  @@index([sessionId, createdAt])
+  @@map("messages")
+}
+
+enum FeedbackRating {
+  like
+  dislike
+}
+
+model Feedback {
+  id        String         @id @default(uuid())
+  messageId String         @unique
+  message   Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  rating    FeedbackRating
+  comment   String?        @db.Text
+  createdAt DateTime       @default(now())
+
+  @@map("feedback")
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge Base
+// ---------------------------------------------------------------------------
+
+enum KnowledgeSourceType {
+  pdf
+  docx
+  txt
+  csv
+  url
+  website
+  irdai
+}
+
+enum KnowledgeDocumentStatus {
+  pending
+  processing
+  indexed
+  failed
+  stale
+}
+
+model KnowledgeDocument {
+  id             String                  @id @default(uuid())
+  title          String
+  sourceType     KnowledgeSourceType
+  sourceUrl      String?
+  s3Key          String?
+  status         KnowledgeDocumentStatus @default(pending)
+  checksum       String?
+  failureReason  String?                 @db.Text
+  chunkCount     Int                     @default(0)
+  lastCrawledAt  DateTime?
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  chunks KnowledgeChunk[]
+
+  @@index([status])
+  @@index([sourceType])
+  @@unique([sourceUrl])
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id            String            @id @default(uuid())
+  documentId    String
+  document      KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  content       String            @db.Text
+  chunkIndex    Int
+  tokenCount    Int
+  qdrantPointId String            @unique
+  createdAt     DateTime          @default(now())
+
+  @@index([documentId])
+  @@map("knowledge_chunks")
+}
+
+model CrawlLog {
+  id           String   @id @default(uuid())
+  source       String
+  pagesFound   Int      @default(0)
+  pagesIndexed Int      @default(0)
+  pagesFailed  Int      @default(0)
+  startedAt    DateTime @default(now())
+  finishedAt   DateTime?
+  status       String   @default("running")
+  errorMessage String?  @db.Text
+
+  @@map("crawl_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Admin
+// ---------------------------------------------------------------------------
+
+enum AdminRole {
+  super_admin
+  admin
+  analyst
+  support
+}
+
+model AdminUser {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         AdminRole @default(admin)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("admin_users")
+}
+
+model AiSettings {
+  id                String   @id @default("default")
+  temperature       Float    @default(0.2)
+  topP              Float    @default(0.9)
+  frequencyPenalty  Float    @default(0)
+  presencePenalty   Float    @default(0)
+  maxTokens         Int      @default(1024)
+  systemPrompt      String   @db.Text
+  primaryProvider   String   @default("openai")
+  secondaryProvider String   @default("gemini")
+  fallbackProvider  String   @default("gemini-flash")
+  updatedAt         DateTime @updatedAt
+
+  @@map("ai_settings")
+}
